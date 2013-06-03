@@ -35,6 +35,7 @@
 // boost header
 #include <boost/exception/all.hpp>
 #include <boost/program_options.hpp>
+#include <boost/regex.hpp>
 
 // initializing libgcrypt, must be done in executable
 #include <gcrypt.h>
@@ -119,6 +120,18 @@ int Main( int argc, char **argv )
 						"instead of uploading it." )
 		( "dry-run",	"Only detect which files need to be uploaded/downloaded, "
 						"without actually performing them." )
+		( "listing,ls", po::value<std::string>(), "List files from the Google "
+						"Drive server.")
+		( "download,D", po::value<std::string>(), "Download the input file.")
+		( "format",     po::value<std::string>(), "To use with 'download' option "
+						"Export the document(s) to the requested format (i.e. pdf) "
+						"(see google documentation for more export formats).")
+		( "destination,dest",po::value<std::string>(), "To use with 'download' "
+						"or 'push' options. Specify a destination for the "
+						"element to download or to push.")
+		( "recursive,r","To use with 'download' or 'listing' options specifying "
+						"if grive should parse thedirectories.")
+		( "push,P",     po::value<std::string>(), "Upload the input file.")
 	;
 	
 	po::variables_map vm;
@@ -186,18 +199,64 @@ int Main( int argc, char **argv )
 	AuthAgent agent( token, std::auto_ptr<http::Agent>( new http::CurlAgent ) ) ;
 
 	Drive drive( &agent, config.GetAll() ) ;
-	drive.DetectChanges() ;
 
-	if ( vm.count( "dry-run" ) == 0 )
+	if (( vm.count( "listing" ))
+	||  ( vm.count( "download" ))
+	||  ( vm.count( "push" )))
 	{
-		drive.Update() ;
-		drive.SaveState() ;
+		drive.BuildRemote();
+
+		bool recursive = ( vm.count( "recursive" ) ? 1 : 0 ) ;
+
+		if ( vm.count( "listing" ) )
+		{
+			std::string ls_path = vm["listing"].as<std::string>() ;
+			drive.Command_ls( ls_path, recursive ) ;
+		}
+		else if ( vm.count( "download" ) )
+		{
+			std::string dl_path = vm["download"].as<std::string>() ;
+
+			std::string format  = "" ;
+			if ( vm.count( "format" ) )
+				format = vm["format"].as<std::string>() ;
+
+			std::string destination = "" ;
+			if ( vm.count( "destination" ) )
+				destination = vm["destination"].as<std::string>() ;
+			else
+				destination = "." ;
+
+			drive.Command_Download( dl_path, format, destination, recursive ) ;
+		}
+		else if ( vm.count( "push" ) )
+		{
+			std::string up_path = vm["push"].as<std::string>() ;
+			std::string up_dest = ( vm.count( "destination" ) ) ?
+										vm["destination"].as<std::string>() :
+										"." ;
+			drive.Command_Push( up_path, up_dest ) ;
+		}
 	}
 	else
-		drive.DryRun() ;
-	
-	config.Save() ;
-	Log( "Finished!", log::info ) ;
+	{
+		drive.DetectChanges() ;
+		if ( vm.count( "dry-run" ) )
+		{
+			drive.DryRun() ;
+		}
+		else
+		{
+			drive.Update() ;
+			drive.SaveState() ;
+		}
+
+		config.Save() ;
+		Log( "Finished!", log::info ) ;
+
+	}
+
+
 	return 0 ;
 }
 

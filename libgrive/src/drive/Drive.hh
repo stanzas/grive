@@ -20,6 +20,7 @@
 #pragma once
 
 #include "State.hh"
+#include "Entry.hh"
 
 #include "http/Header.hh"
 #include "protocol/Json.hh"
@@ -27,6 +28,7 @@
 
 #include <string>
 #include <vector>
+#include <map>
 
 namespace gr {
 
@@ -45,10 +47,14 @@ public :
 	Drive( http::Agent *agent, const Json& options ) ;
 
 	void DetectChanges() ;
+	void BuildRemote( ) ;
 	void Update() ;
 	void DryRun() ;
 	void SaveState() ;
-	
+	void Command_ls( const std::string& path, bool rec ) ;
+	void Command_Download( const std::string& path, const std::string& format,
+				const std::string& destination, bool rec );
+	void Command_Push( const std::string& path, const std::string& destination );
 	struct Error : virtual Exception {} ;
 	
 private :
@@ -57,6 +63,7 @@ private :
 	void FromRemote( const Entry& entry ) ;
 	void FromChange( const Entry& entry ) ;
 	void UpdateChangeStamp( ) ;
+	void ImportEntryRemote( const Entry& entry );
 	
 private :
 	http::Agent 	*m_http ;
@@ -64,6 +71,7 @@ private :
 	fs::path		m_root ;
 	State			m_state ;
 	Json			m_options ;
+	std::map<std::string, std::vector<Entry> > a_map ;
 } ;
 
 } } // end of namespace

@@ -50,6 +50,7 @@ public :
 	~State() ;
 	
 	void FromLocal( const fs::path& p ) ;
+	void Remote( const Entry& e, Resource *folder ) ;
 	void FromRemote( const Entry& e ) ;
 	void ResolveEntry() ;
 	
@@ -60,6 +61,13 @@ public :
 	Resource* FindByID( const std::string& id ) ;
 
 	void Sync( http::Agent *http, const Json& options ) ;
+	void ListingCmd( http::Agent *http, const Json& options,
+				const std::string& path, bool rec ) ;
+	void DownloadCmd( http::Agent *http, const Json& options,
+				const std::string& path, const std::string& format,
+				const std::string& destination, bool rec ) ;
+	void PushCmd( http::Agent *http, const Json& options,
+				const std::string& path, const std::string& destination ) ;
 	
 	iterator begin() ;
 	iterator end() ;
@@ -71,6 +79,7 @@ private :
 	void FromLocal( const fs::path& p, Resource *folder ) ;
 	void FromChange( const Entry& e ) ;
 	bool Update( const Entry& e ) ;
+	Resource* FindResource( const std::string& path ) ;
 	std::size_t TryResolveEntry() ;
 
 	static bool IsIgnore( const std::string& filename ) ;

@@ -166,6 +166,7 @@ void Entry::Swap( Entry& e )
 	m_self_href.swap( e.m_self_href ) ;
 	m_alt_self.swap( e.m_alt_self ) ;
 	m_content_src.swap( e.m_content_src ) ;
+	m_content_ggdoc.swap( e.m_content_ggdoc ) ;
 	m_edit_link.swap( e.m_edit_link ) ;
 	m_create_link.swap( e.m_create_link ) ;
 

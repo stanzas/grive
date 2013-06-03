@@ -125,6 +125,92 @@ void Drive::SyncFolders( )
 	m_state.ResolveEntry() ;
 }
 
+void Drive::ImportEntryRemote( const Entry& a_entry )
+{
+	std::map<std::string, std::vector<Entry> >::iterator it_entry ;
+
+	// Try to find the ParentHref in imported folders
+	Resource *parent = m_state.FindByHref( a_entry.ParentHref() ) ;
+	if (( parent == 0 ) && ( a_entry.ParentHref() != root_href ))
+	{
+
+		it_entry = a_map.find( a_entry.ParentHref() ) ;
+		if ( it_entry != a_map.end() )
+		{
+            it_entry->second.push_back( a_entry ) ;
+		}
+		else
+		{
+			std::vector<Entry> new_vector ;
+			new_vector.push_back( a_entry ) ;
+
+			// if don't find it, put it on hold
+			a_map[ a_entry.ParentHref() ] = new_vector ;
+		}
+
+	}
+	else
+	{
+		m_state.Remote( a_entry, parent );
+
+		// Try to find if the imported Entry is the parent of some folder on hold
+        if ( a_entry.Kind() == "folder" )
+        {
+			it_entry = a_map.find( a_entry.SelfHref() );
+			if ( it_entry != a_map.end() )
+			{
+				Entry m_entry;
+				while ( !it_entry->second.empty() )
+				{
+					m_entry = it_entry->second.back();
+					this->ImportEntryRemote( m_entry );
+					it_entry->second.pop_back();
+				}
+				a_map.erase( it_entry );
+			}
+        }
+	}
+}
+
+void Drive::BuildRemote( )
+{
+    Resource *parent ;
+/*
+    http::XmlResponse xml ;
+	m_http->Get( feed_base + "/-/folder?max-results=50&showroot=true", &xml, http::Header() ) ;
+	Feed feed( xml.Response() ) ;
+*/
+
+	Log( "Reading remote server file list", log::info ) ;
+	Feed feed ;
+	if ( m_options["log-xml"].Bool() )
+		feed.EnableLog( "/tmp/file", ".xml" ) ;
+
+	feed.Start( m_http, feed_base + "?showfolders=true&showroot=true" ) ;
+
+	m_resume_link = feed.Root()["link"].
+		Find( "@rel", "http://schemas.google.com/g/2005#resumable-create-media" )["@href"] ;
+
+	do
+	{
+        // First, consider only the directories
+    	for ( Feed::iterator i = feed.begin() ; i != feed.end() ; ++i )
+		{
+    		Entry r_entry( *i ) ;
+    		if ( r_entry.ParentHrefs().size() != 1 )
+				Log( "(folder) \"%1%\" has multiple parents, ignored", r_entry.Title(), log::verbose ) ;
+			
+			else if ( r_entry.Title().find('/') != std::string::npos )
+				Log( "(folder) \"%1%\" contains a slash in its name, ignored", r_entry.Title(), log::verbose ) ;
+
+            else
+            {
+            	this->ImportEntryRemote( r_entry );
+            }
+		}
+	} while ( feed.GetNext( m_http ) ) ;
+}
+
 void Drive::DetectChanges()
 {
 	Log( "Reading local directories", log::info ) ;
@@ -167,6 +253,26 @@ void Drive::DetectChanges()
 			changes.begin(), changes.end(),
 			boost::bind( &Drive::FromChange, this, _1 ) ) ;
 	}
+}
+
+void Drive::Command_ls( const std::string& path, bool rec )
+{
+    Log( "Command ls: listing files (%1%)", path, log::verbose );
+    m_state.ListingCmd( m_http, m_options, path, rec );
+}
+
+void Drive::Command_Download( const std::string& path,
+                                 const std::string& format,
+                                 const std::string& destination, bool rec )
+{
+    Log( "Command Download: Downloading %1% (%2%)", path, format, log::verbose );
+    m_state.DownloadCmd( m_http, m_options, path, format, destination, rec );
+}
+
+void Drive::Command_Push( const std::string& path, const std::string& destination )
+{
+    Log( "Command Push: Pushing %1%", path, log::verbose );
+    m_state.PushCmd( m_http, m_options, path, destination );
 }
 
 void Drive::Update()

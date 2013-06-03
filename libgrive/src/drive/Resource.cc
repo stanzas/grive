@@ -158,6 +158,19 @@ void Resource::FromRemote( const Entry& remote, const DateTime& last_sync )
 	}
 }
 
+void Resource::Remote( const Entry& remote )
+{
+	fs::path path = Path() ;
+
+	AssignIDs( remote ) ;
+
+	if ( m_state == remote_new || m_state == remote_changed )
+	{
+		m_md5	= remote.MD5() ;
+		m_mtime	= remote.MTime() ;
+	}
+}
+
 void Resource::AssignIDs( const Entry& remote )
 {
 	// the IDs from change feed entries are different
@@ -314,6 +327,22 @@ void Resource::AddChild( Resource *child )
 	m_child.push_back( child ) ;
 }
 
+void Resource::RemoveChild( Resource *child )
+{
+	assert( child != 0 ) ;
+
+	std::vector<Resource*>::iterator r = std::find(m_child.begin(), m_child.end(), child);
+	if (r != m_child.end())
+	{
+		m_child.erase( r );
+	}
+	else
+	{
+		Log( "-- RemoveChild() -> Resource not found (%1%);", child->Name(), log::info ) ;
+	}
+
+}
+
 void Resource::Swap( Resource& coll )
 {
 	m_name.swap( coll.m_name ) ;
@@ -362,6 +391,98 @@ Resource* Resource::FindChild( const std::string& name )
 			return *i ;
 	}
 	return 0 ;
+}
+
+// Get a listing of files
+void Resource::Listing( http::Agent *http, const Json& options, bool recursive )
+{
+    Log( "%1%", m_name, log::info );
+ 
+    if ( recursive == 1 )
+    {
+        ListingSelf( http, options );
+        std::for_each( m_child.begin(), m_child.end(),
+            boost::bind( &Resource::Listing, _1, http, options, recursive ) ) ;
+    }
+    else
+    {
+//        Log( "Listing -- %1% (non-recursive)", m_name, log::info );
+        std::for_each( m_child.begin(), m_child.end(),
+            boost::bind( &Resource::ListingSelf, _1, http, options ) ) ;
+    }
+}
+
+// Used to perform an action on a resource
+void Resource::ListingSelf( http::Agent *http, const Json& options )
+{
+    if ( IsFolder() )
+    {
+        Log( "|-> [%1%]", m_name, log::info );
+    }
+    else
+    {
+        Log( "|-> %1%", m_name, log::info );
+    }
+}
+
+void Resource::DownloadCmd( http::Agent *http, const Json& options,
+		                       const std::string& format,
+                               const std::string& destination,
+                               bool rec, bool curdir )
+{
+    
+    if ( m_kind == "folder" )
+    {
+        if ( rec == 1 )
+        {
+            DownloadCmd( http, options, format, destination, rec, 0 );
+            std::for_each( m_child.begin(), m_child.end(),
+                boost::bind( &Resource::DownloadCmd, _1, http, options,
+                		         format, destination, rec, 0 ) ) ;
+        }
+        else
+        {
+            std::for_each( m_child.begin(), m_child.end(),
+                boost::bind( &Resource::DownloadCmdSelf, _1, http, options,
+                		         format, destination, 0 ) ) ;
+        }
+    }
+    else
+    {
+        this->DownloadCmdSelf( http, options, format, destination, 1 ) ;
+    }
+}
+
+void Resource::DownloadCmdSelf( http::Agent *http, const Json& options,
+                                   const std::string& format,
+                                   const std::string& destination, bool curdir )
+{
+    fs::path path = ( curdir == 1 ) ? ( destination +  "/" + m_name ) : Path() ;
+
+    if ( IsFolder() )
+    {
+        Log( "Downloaded [%1%]", m_name, log::info ) ;
+    }
+    else
+    {
+        if ( http != 0 )
+    	{
+    		std::string content_dl = m_content ;
+    		if ( format != "" )
+    		{
+    			content_dl = m_content + "&exportFormat=" + format +
+    					                     "&format=" + format ;
+    		}
+            this->Download( http, content_dl, path ) ;
+		}
+        Log( "Downloaded %1%", m_name, log::info ) ;
+    }
+}
+
+bool Resource::PushCmd( http::Agent *http, const Json& options,
+                           const std::string& filepath )
+{
+    return Upload( http, m_parent->m_create + "?convert=false", true, filepath );
 }
 
 // try to change the state to "sync"
@@ -505,7 +626,6 @@ void Resource::DeleteRemote( http::Agent *http )
 	}
 }
 
-
 void Resource::Download( http::Agent* http, const fs::path& file ) const
 {
 	assert( http != 0 ) ;
@@ -518,6 +638,22 @@ void Resource::Download( http::Agent* http, const fs::path& file ) const
 			os::SetFileTime( file, m_mtime ) ;
 		else
 			Log( "encountered zero date time after downloading %1%", file, log::warning ) ;
+	}
+}
+
+void Resource::Download( http::Agent* http, const std::string& file,
+    	                     const fs::path& dest ) const
+{
+	assert( http != 0 ) ;
+
+	http::Download dl( dest.string(), http::Download::NoChecksum() ) ;
+	long r = http->Get( file, &dl, http::Header() ) ;
+	if ( r <= 400 )
+	{
+		if ( m_mtime != DateTime() )
+			os::SetFileTime( dest, m_mtime ) ;
+//		else
+//			Log( "encountered zero date time after downloading %1%", dest, log::warning ) ;
 	}
 }
 
@@ -579,7 +715,17 @@ bool Resource::Create( http::Agent* http )
 bool Resource::Upload(
 	http::Agent* 		http,
 	const std::string&	link,
-	bool 				post)
+	bool 			post)
+{
+	std::string filepath = Path().string() ;
+	return this->Upload( http, link, post, filepath ) ;
+}
+
+bool Resource::Upload(
+	http::Agent* 		http,
+	const std::string&	link,
+	bool 			post,
+	const std::string&	filepath )
 {
 	assert( http != 0 ) ;
 	

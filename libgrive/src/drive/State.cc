@@ -102,6 +102,36 @@ void State::FromLocal( const fs::path& p, Resource* folder )
 	}
 }
 
+void State::Remote( const Entry& e, Resource* folder )
+{
+    std::string fn = e.Filename() ;
+    
+    if ( folder == 0 )
+        folder = m_res.Root();
+
+    if ( IsIgnore( e.Name() ) )
+		Log( "%1% %2% is ignored by grive", e.Kind(), e.Name(), log::verbose ) ;
+
+	// common checkings
+/*
+    else if ( e.Kind() != "folder" && (fn.empty() || e.ContentSrc().empty()) )
+		Log( "%1% \"%2%\" is a google document, ignored", e.Kind(), e.Name(), log::verbose ) ;
+*/	
+	else if ( fn.find('/') != fn.npos )
+		Log( "%1% \"%2%\" contains a slash in its name, ignored", e.Kind(), e.Name(), log::verbose ) ;
+	
+	else if ( !e.IsChange() && e.ParentHrefs().size() != 1 )
+		Log( "[%1%] \"%2%\" has multiple parents, ignored", e.Kind(), e.Title(), log::verbose ) ;
+
+	else
+    {
+        Resource *c = new Resource( e.Name(), e.Kind() ) ;
+        c->Remote( e );
+		folder->AddChild( c ) ;
+        m_res.Insert( c ) ;
+    }
+}
+
 void State::FromRemote( const Entry& e )
 {
 	std::string fn = e.Filename() ;				
@@ -173,11 +203,13 @@ bool State::Update( const Entry& e )
 	assert( !e.IsChange() ) ;
 	assert( !e.ParentHref().empty() ) ;
 
+	// Try to find the Entry in the RessourceTree
 	if ( Resource *res = m_res.FindByHref( e.SelfHref() ) )
 	{
 		m_res.Update( res, e, m_last_sync ) ;
 		return true ;
 	}
+	// Try to find the Parent Entry in the Entire RessourceTree
 	else if ( Resource *parent = m_res.FindByHref( e.ParentHref() ) )
 	{
 		assert( parent->IsFolder() ) ;
@@ -281,6 +313,116 @@ void State::Sync( http::Agent *http, const Json& options )
 		Trace( "updating last sync? %1%", last_sync_time ) ;
     	m_last_sync = last_sync_time;
   	}
+}
+
+Resource* State::FindResource( const std::string& path )
+{
+
+    // Parse "path" to find '/' and go to the correct directory recursively
+    boost::filesystem::path given_path( path );
+    boost::filesystem::path d_path;
+
+    std::string v_string;
+    Resource *element = 0;
+
+    boost::filesystem::path::iterator it(given_path.begin());
+    if ( *it == "/" )
+    {
+        it++;
+        element = m_res.Root();
+        for ( 1; it != given_path.end(); ++it )
+        {
+            d_path = *it;
+            v_string = d_path.string();
+            
+            element = element->FindChild( v_string ) ;
+            if ( element == 0)
+            {
+                Log( "!! Error: the child element hasn't been found.",
+                        v_string, log::verbose );
+                break;
+            }
+        }
+    }
+    else
+    {
+        Log( "!! Error: The Path must be relative to the root (must start with '/').",
+                path, log::verbose );
+    }
+
+    return element ;
+}
+
+void State::ListingCmd( http::Agent *http, const Json& options,
+                           const std::string& path, bool rec )
+{
+    
+    Resource *element = this->FindResource( path ) ;
+    if ( element != 0 )
+    {
+        element->Listing( http, options, rec );
+    }
+    else
+    {
+        Log( "!! Error: Resource '%1%' not found.", path, log::info );
+    }
+
+}
+
+void State::DownloadCmd( http::Agent *http, const Json& options,
+    	                    const std::string& path, const std::string& format,
+                            const std::string& destination, bool rec )
+{
+
+    Resource *element = this->FindResource( path ) ;
+    if ( element != 0 )
+    {
+        element->DownloadCmd( http, options, format, destination, rec, 1 );
+    }
+    else
+    {
+        Log( "!! Error: Resource '%1%' not found.", path, log::info );
+    }
+
+}
+
+void State::PushCmd( http::Agent *http, const Json& options,
+    	               const std::string& path, const std::string& destination )
+{
+    assert( !fs::is_directory( path ) ) ;
+    
+    boost::filesystem::path given_path( path ) ;
+    std::string             filename  = given_path.filename().string() ;
+
+    if ( !fs::exists( path ) )
+    {
+        Log( "!! Error: The file '%1%' doesn't exist on the filesystem.",
+                path, log::info );
+    }
+    else
+    {
+        Resource *element = this->FindResource( destination ) ;
+        if ( element != 0 )
+        {
+    		Resource *c = new Resource( filename, fs::is_directory( path ) ? "folder" : "file" ) ;
+        	element->AddChild( c ) ;
+    		m_res.Insert( c ) ;
+            if ( c->PushCmd( http, options, path ) )
+            {
+                Log( "Upload of '%1%' done.", filename, log::info ) ;
+            }
+            else
+            {
+                Log( "!! Error: Not able to upload '%1%' in '%2%'.",
+                        filename, destination, log::info ) ;
+            }
+        }
+        else
+        {
+            Log( "!! Error: Destination directory '%1%' doesn't exist in GDrive.",
+                    destination, log::info );
+        }
+    }
 }
 
 long State::ChangeStamp() const

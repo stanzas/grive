@@ -34,6 +34,7 @@ namespace http
 	class Agent ;
 }
 
+class Entry ;
 class Json ;
 
 namespace v1 {
@@ -69,6 +70,7 @@ public :
 	const Resource* Parent() const ;
 	Resource* Parent() ;
 	void AddChild( Resource *child ) ;
+	void RemoveChild( Resource *child ) ;
 	Resource* FindChild( const std::string& title ) ;
 	
 	fs::path Path() const ;
@@ -78,9 +80,17 @@ public :
 	std::string MD5() const ;
 
 	void FromRemote( const Entry& remote, const DateTime& last_sync ) ;
+	void Remote( const Entry& remote );
 	void FromLocal( const DateTime& last_sync ) ;
 	
 	void Sync( http::Agent* http, DateTime& sync_time, const Json& options ) ;
+	void Listing( http::Agent* http, const Json& options, bool recursive ) ;
+	void DownloadCmd( http::Agent* http, const Json& options,
+				const std::string& format,
+				const std::string& destination,
+				bool rec, bool curdir ) ;
+	bool PushCmd( http::Agent* http, const Json& options,
+				const std::string& filepath ) ;
 
 	// children access
 	iterator begin() const ;
@@ -128,9 +138,13 @@ private :
 	void SetState( State new_state ) ;
 
 	void Download( http::Agent* http, const fs::path& file ) const ;
+	void Download( http::Agent* http, const std::string& file,
+			          const fs::path& dest ) const ;
 	bool EditContent( http::Agent* http, bool new_rev ) ;
 	bool Create( http::Agent* http ) ;
 	bool Upload( http::Agent* http, const std::string& link, bool post ) ;
+	bool Upload( http::Agent* http, const std::string& link, bool post,
+			const std::string& filepath ) ;
 	
 	void FromRemoteFolder( const Entry& remote, const DateTime& last_sync ) ;
 	void FromRemoteFile( const Entry& remote, const DateTime& last_sync ) ;
@@ -140,7 +154,11 @@ private :
 	
 	void AssignIDs( const Entry& remote ) ;
 	void SyncSelf( http::Agent* http, const Json& options ) ;
-	
+	void ListingSelf( http::Agent* http, const Json& options ) ;
+	void DownloadCmdSelf( http::Agent* http, const Json& options,
+				const std::string& format,
+				const std::string& destination, bool curdir ) ;
+
 private :
 	std::string				m_name ;
 	std::string				m_kind ;

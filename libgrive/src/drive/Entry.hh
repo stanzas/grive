@@ -88,6 +88,7 @@ private :
 	std::string		m_self_href ;
 	std::string		m_alt_self ;
 	std::string		m_content_src ;
+	std::string		m_content_ggdoc ;
 	std::string		m_edit_link ;
 	std::string		m_create_link ;
 
